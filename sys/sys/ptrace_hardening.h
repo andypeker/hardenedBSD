@@ -45,6 +45,9 @@ extern gid_t phardening_allowed_gid;
 int
 ptrace_hardening(struct thread *, pid_t);
 
+void
+ptrace_hardening_init(void);
+
 #endif /* _KERNEL */
 
 #endif /* __SYS_PTRACE_HARDENING_H */

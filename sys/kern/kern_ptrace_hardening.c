@@ -78,9 +78,9 @@ SYSCTL_PROC(_security_ptrace_hardening, OID_AUTO, status,
             "1 - enabled");
 
 #ifdef PTRACE_HARDENING_GRP
-SYSCTL_PROC(_security_ptrace_hardening, OID_AUTO, gid,
+SYSCTL_PROC(_security_ptrace_hardening, OID_AUTO, allowed_gid,
             CTLTYPE_UINT|CTLFLAG_RW|CTLFLAG_PRISON|CTLFLAG_SECURE,
-            NULL, 0, sysctl_ptrace_hardening_gid, "U",
+            NULL, 0, sysctl_ptrace_hardening_gid, "IU",
             "Allowed gid");
 #endif
 
@@ -107,12 +107,11 @@ int
 sysctl_ptrace_hardening_gid(SYSCTL_HANDLER_ARGS)
 {
     int err;
-    uint64_t val;
-    err = sysctl_handle_64(oidp, &val, sizeof(uint64_t), req);
+    err = sysctl_handle_int(oidp, &ptrace_hardening_allowed_gid, 
+                            0, req);
     if (err || (req->newptr == NULL))
         return (err);
 
-    ptrace_hardening_allowed_gid = (gid_t)val;
     return (0);
 }
 
@@ -120,33 +119,25 @@ int
 ptrace_hardening(struct thread *td, pid_t pid)
 {
     uid_t uid = td->td_ucred->cr_ruid;
-#ifdef PTRACE_HARDENING_CHLD
-    struct proc *cchild = NULL;
-    sx_init(&proctree_lock);
-#endif
 #ifdef PTRACE_HARDENING_GRP
     gid_t gid = td->td_ucred->cr_rgid;
-    if (uid || gid != ptrace_hardening_allowed_gid)
+    if (uid || (ptrace_hardening_allowed_gid && 
+        gid != ptrace_hardening_allowed_gid))
         return (EPERM);
 #else
     if (uid)
         return (EPERM);
 #endif
-#ifdef PTRACE_HARDENING_CHLD
-    sx_xlock(&proctree_lock);
-    LIST_FOREACH(cchild, &td->td_proc->p_children, 
-                 p_sibling) {
-        PROC_LOCK(cchild);
-        if (cchild->p_pid == pid) {
-            PROC_UNLOCK(cchild);
-            sx_xunlock(&proctree_lock);
-            return (0);
-        }
-        PROC_UNLOCK(cchild);
-    }
-    sx_xunlock(&proctree_lock);
-    
-    return (EPERM);
-#endif
+
     return (0);
 }
+
+void
+ptrace_hardening_init(void)
+{
+    printf("[PTRACE HARDENING] %d\n", ptrace_hardening_status);
+#ifdef PTRCE_HARDENING_GRP
+    printf("[PTRACE HARDENING GROUP] %d\n", ptrace_hardening_allowed_gid);
+#endif
+}
+SYSINIT(hardening, SI_SUB_PTRACE_HARDENING, SI_ORDER_FIRST, ptrace_hardening_init, NULL);
