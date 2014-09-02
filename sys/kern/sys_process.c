@@ -647,7 +647,27 @@ kern_ptrace(struct thread *td, int req, pid_t pid, void *addr, int data)
 	struct ptrace_lwpinfo32 *pl32 = NULL;
 	struct ptrace_lwpinfo plr;
 #endif
+#ifdef PTRACE_HARDEN
+	uid_t uid = td->td_ucred->cr_ruid;
+	/* can look only its chldren or is root */
+	sx_xlock(&proctree_lock);
+	LIST_FOREACH(curp, &td->td_proc->p_children, p_sibling) {
+		PROC_LOCK(curp);
+		if (curp->p_pid == pid) {
+			PROC_UNLOCK(curp);
+			sx_xunlock(&proctree_lock);
+			goto ptrace_continue;
+		}
+		PROC_UNLOCK(curp);
+	}
+	sx_xunlock(&proctree_lock);	
 
+	if (uid) {
+		printf("[PTRACE HARDEN] %d user ptrace attempt on pid %d", uid, pid);
+		return EPERM;
+	}
+ptrace_continue:
+#endif
 	curp = td->td_proc;
 
 	/* Lock proctree before locking the process. */
